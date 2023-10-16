@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ir import *
@@ -11,7 +12,11 @@ def PrintCCode(ir):
 		if d:
 			code += to_string(d)
 	print(code)
-
+ 
+def PrintCGroupCode(index_groups):
+    for name, expressions in index_groups.items():
+        for expr in expressions:
+            print(to_string(expr))
 
 def Loop0():
     ir = []
@@ -45,7 +50,6 @@ def Loop0():
     ir.extend([loopi])
 
     return ir
-
 
 # for ( k = 0; k < L ; ++k ){
 # 	for ( j = 0; j < M; ++ j ){
@@ -92,7 +96,6 @@ def Loop1():
 
     return ir
 
-
 # for ( i = 0; i < N ; ++i ){
 # 	for ( j = 0; j < N; ++ j ){
 # 			a[i][j] = a[i+1][j-1];
@@ -127,44 +130,225 @@ def Loop2():
 
     return ir
 
-def InterchangeLoop(loop, loop_idx=[]):
-	#Implement here
-	pass
+# 5. Safety checking based on the direction vector we get:
+# Exchange [0, 1]
+# [=, <, >]
+# [<, =, =]
+# [=, <, >]
 
-def InterchangeLoopDemoOnSept122023(loop, loop_idx=[]):
-    ir_res = []
-    inner_most_loop_pointer = []
-    for item in loop:
-        if type(item)==Loop:
-            body = item.body[0]
-            while type(body) == Loop:
-                inner_most_loop_pointer = body
-                body = body.body[0]
+# Exchange [0, 2]
+# [>, =, <] The first
+
+def is_interchange_safe(direction_vectors, loop_indices_to_interchange):
+    # Loop through the selected pairs of loops to interchange
+    for i in range(len(loop_indices_to_interchange)):
+        for j in range(i + 1, len(loop_indices_to_interchange)):
+            loop1_idx = loop_indices_to_interchange[i]
+            loop2_idx = loop_indices_to_interchange[j]
+
+            # Check the direction vectors for conflicts
+            for direction1, direction2 in zip(direction_vectors[loop1_idx], direction_vectors[loop2_idx]):
+                if direction1 != '=' and direction2 != '=' and direction1 != direction2:
+                    # If there's a conflict, return False
+                    return False
     
-    body = inner_most_loop_pointer.body
+    return True
 
+# 4. Compute the direction vector
+# [Write expression, Read expression]
+# [A[_l10 + 1][_l1][_l2], A[_l0][_l1][_l2 + 1]]
+# [B[_l0 + 1][_l1 + 2][_l2 - 1], B[_l0 + 1][_l1][_l2 - 1]]
+# [B[_l0 + 1][_l1 + 2][_l2 - 1], B[_l0][_l1 + 2][_l2]]
 
-    for item in body:
-        assert type(item)==Assignment
-        lhs = item.lhs
-        rhs = item.rhs
+# Distance vector:
+# [1, 0, -1]
+# [0, 2,  0]
+# [1, 0, -1]
+
+# Direction vector
+# [<, =, >]
+# [=, <, =]
+# [<, =, >]
+
+def direction_vector(dist_vect):
+    dir_vect = []
+    for i in range(0, len(dist_vect)):
+        directions = []
+        for j in range(0, len(dist_vect[i])):
+            if dist_vect[i][j] > 0:
+                directions.append('<')
+            elif dist_vect[i][j] < 0:
+                directions.append('>')
+            else:
+                directions.append('=')
+        dir_vect.append(directions)
+    return dir_vect
+
+# Helper functeion for extracting int from i.e "_l0 + 1"
+def extract_integer_value(exp):
+    exp = exp.replace(" ", "")
+    for character in range(0, len(exp)):
+        if len(exp) > 1:
+            if exp[character].isdigit() and exp[character-1].isalpha():
+                pass
+            elif exp[character].isdigit() and exp[character-1] == '-':
+                return -1 * int(exp[character])
+            elif exp[character].isdigit():
+                return int(exp[character])
+    return 0
+
+# calculate the distance but in reverse and then correcting
+def distance_vector(combinations):
+    def calculate_distance(combo, dist_vect, temp_dist):
+        if type(combo[0]) == Ndarray and type(combo[1]) == Ndarray:
+            return dist_vect.append(temp_dist)
         
-        idx = []
-        while type(lhs) == Index:
-            idx.append(lhs.index)
-            lhs = lhs.dobject
-
-        print(idx)
-        # if type(lhs) == Index:
+        elif type(combo[0]) == Index and type(combo[1]) == Index:
+            index_1 = to_string(combo[0].index)
+            index_2 = to_string(combo[1].index)
             
-        # else:
+            numeric_value1 = extract_integer_value(index_1)
+            numeric_value2 = extract_integer_value(index_2)
+            distance = numeric_value1 - numeric_value2
 
-        # if type(rhs) == Ndarray:
-    PrintCCode(inner_most_loop_pointer.body)
+            temp_dist.append(distance)
+            calculate_distance([combo[0].dobject,combo[1].dobject], dist_vect, temp_dist)
+            
+    dist_vect = []
+    for combo in combinations:
+        temp_dist = []
+        dist = calculate_distance(combo, dist_vect, temp_dist)
+        dist_vect.append(dist)
+    filtered_dist_vect = [x for x in dist_vect if x is not None]
+    final_dist = []
+    for vec in filtered_dist_vect:
+        vec = list(reversed(vec))
+        final_dist.append(vec)
+    
+    return final_dist
 
+def Write_expression_Read_expression_combination(write_dic, read_dic):
+    combinations = []
+    for key in write_dic.keys():
+        for writer in range(0, len(write_dic[key])):
+            key_writer_list = write_dic[key]
+            key_reader_list = read_dic[key]
+            for reader in range(0, len(key_reader_list)):
+                combinations.append([key_writer_list[writer], key_reader_list[reader]])
+    
+    return combinations
 
-    #print("Please implement the pass here")
-    pass
+# 3. Group the index statement by there names.
+# Two dict:
+#     Write dicts: {A : [A[_l10 + 1][_l1][_l2]], 'B' : [B[_l0 + 1][_l1 + 2][_l2 - 1]]}
+#     Read dicts:  {A : [A[_l0][_l1][_l2 + 1]], 'B' : [B[_l0 + 1][_l1][_l2 - 1], B[_l0][_l1 + 2][_l2]]}
+
+def read_write_dic(write_expr, read_expr):
+    def recursive_group(original_statement, cur_statement,  res_dict):
+        if type(cur_statement) == Ndarray:
+            name = cur_statement.__name__
+            if (name not in res_dict):
+                res_dict[name] = [original_statement]
+            else:
+                res_dict[name].append(original_statement)
+        
+        elif type(cur_statement) == Index:
+            recursive_group(original_statement, cur_statement.dobject, res_dict)
+
+    write_index_groups = {}
+    read_index_groups = {}
+    for statement in write_expr:
+        recursive_group(statement, statement, write_index_groups)
+    for statement in read_expr:
+        recursive_group(statement, statement, read_index_groups)
+    return write_index_groups, read_index_groups
+
+# 2. Get the index statement of the loop body
+# write ststement array: A[_l0 + 1][_l1][_l2]B[_l0 + 1][_l1 + 2][_l2 - 1]
+# read statement array: B[_l0 + 1][_l1][_l2 - 1]A[_l0][_l1][_l2 + 1]B[_l0][_l1 + 2][_l2]
+
+def GetIndex(statement, is_write, write_expr = [], read_expr = []):
+    if type(statement) == Ndarray or type(statement) == Index:
+        if is_write:
+            write_expr.append(statement)
+        else:
+            read_expr.append(statement)
+            
+    if type(statement) == Assignment:
+        GetIndex(statement.lhs, True, write_expr, read_expr)
+        GetIndex(statement.rhs, False, write_expr, read_expr)
+    elif type(statement) == Expr:
+        GetIndex(statement.left, is_write, write_expr, read_expr)
+        GetIndex(statement.right, is_write, write_expr, read_expr)
+    else:
+        return
+    
+# 1. Identify the loop body
+# the output of first step
+# A[_l0 + 1][_l1][_l2] = B[_l0 + 1][_l1][_l2 - 1] + 2;
+# B[_l0 + 1][_l1 + 2][_l2 - 1] = A[_l0][_l1][_l2 + 1] + B[_l0][_l1 + 2][_l2];
+
+def FindBody(nested_loop):
+    if not type(nested_loop) == Loop:
+        return nested_loop
+    if type(nested_loop.body[0]) == Loop:
+        return FindBody(nested_loop.body[0])
+    else:
+        return nested_loop.body
+
+def InterchangeLoop(ir, loop_idx=[]):
+    ir_res = []
+    write_expr = []
+    read_expr = []
+    for ir_item in ir:
+        if type(ir_item) == Loop:
+            body = FindBody(ir_item)
+            for body_item in body:
+                GetIndex(body_item, False, write_expr, read_expr)
+    
+    write_index_groups, read_index_groups = read_write_dic(write_expr, read_expr)
+    returned_combination = Write_expression_Read_expression_combination(write_index_groups, read_index_groups)
+    dist_vec = distance_vector(returned_combination)
+    dir_vect = direction_vector(dist_vec)
+    is_safe = is_interchange_safe(dir_vect, [0, 1]) 
+    
+    # Testing Each Step Output
+    print("#############################################################################")  
+    print("<===== (Step 1) Loop body we got! =====>")    
+    PrintCCode(body)
+    
+    print("#############################################################################")  
+    print("<===== (Step 2) Read/Write Statements =====>")
+    PrintCCode(write_expr)  
+    PrintCCode(read_expr)
+    
+    print("\n#############################################################################")  
+    print("<===== (Step 3) Write Dic! =====>")
+    PrintCGroupCode(write_index_groups)
+    
+    print("\n<=====  (Step 3) Read Dic! =====>")
+    PrintCGroupCode(read_index_groups)
+    
+    print("\n<===== Printing the list associated with 'B' key (read dic)! =====>")
+    PrintCCode(read_index_groups['B'])
+    print("Length = ", len(read_index_groups['B']))
+    
+    print("\n#############################################################################")  
+    print("<===== (Step 4) Write/Read combinations =====>")
+    for comb in range(0, len(returned_combination)):
+        PrintCCode(returned_combination[comb])
+    
+    print("\n<===== (Step 4) Distance vector =====>")
+    print(dist_vec)
+    
+    print("\n<===== (Step 4) Direction vector =====>")
+    print(dir_vect)
+
+    print("\n<===== (Step 5) Interchange Safety Check =====>")
+    if is_safe:
+        print("Loop interchange is safe. Direction vectors do not indicate conflicts.")
+    else:
+        print("Loop interchange is not safe. Conflicting directions detected in direction vectors.")
 
 if __name__ == "__main__":
     loop0_ir = Loop0()
@@ -173,8 +357,6 @@ if __name__ == "__main__":
     PrintCCode(loop0_ir)
 
     optimized_loop1_ir = InterchangeLoop(loop0_ir, [0, 1])
-
-    #PrintCCode(optimized_loop1_ir)
     # optimized_loop1_ir = InterchangeLoop(loop1_ir, [1, 2])
     # optimized_loop2_ir = InterchangeLoop(loop2_ir, [0, 1])
 
