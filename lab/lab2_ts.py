@@ -60,11 +60,6 @@ def GetKeyInfo(loop_ir):
     return lower_bounds, upper_bounds, index_dict
 
 def GetNewUpperBound(upper_bound_expr, index_dict, tile_size_list):
-    # if i is an expression of k:  
-    #     New upper bound(i) = Original upper bound(i) + (tile_size(k) -1) 
-    # else
-    #     New upper bound(i) = Original upper bound(i)
-
     if type(upper_bound_expr)==Expr: # upper_bound_expr.left + upper_bound_expr.right 
         # upper_bound_expr.left  is k in the algorithm 
         iterator_index = upper_bound_expr.left
@@ -76,34 +71,10 @@ def GetNewLowerBound(lower_bound_expr, tile_size):
     # New lower bound(i) = Original lower bound(i) - (tile_size(i) - 1)
     return Expr(lower_bound_expr, Expr(tile_size, 1, '-'), '-')
 
-# def LoopTiling(ir, tile_size = []):
-#     tiled_ir = []
-#     for stmt in ir:
-#         if isinstance(stmt, Loop):
-#             new_loop = Loop(stmt.start, stmt.end, stmt.step, [])
-#             new_loop.body = LoopTiling(stmt.body, tile_size)
-#             tiled_ir.append(new_loop)
-#         else:
-#             tiled_ir.append(stmt)
-#     return tiled_ir
-
 def LoopTiling(ir, tile_size = []):
+    new_ir = []
     for ir_item in ir:
         if type(ir_item) == Loop:
-            # for (int _l0 = 0; _l0 < 20; _l0 += 1) {
-            # for (int _l1 = _l0 + 3; _l1 < _l0 + 10; _l1 += 1) {
-            # for (int _l2 = _l1 + 20; _l2 < _l1 + 30; _l2 += 1) {   
-            #lower_bounds and upper_bounds are two lists recording the IRs of 
-            #all corresponding lower bounds and upper bounds. 
-
-            #index_dict is an dict recording the mapping between the index IR and loop index
-            #Since _l0, _l1 and _l2 are the scalar objects instead of a number. 
-
-            #lower_bounds is an array: [0, _l0 + 3, _l1 + 20]
-            #upper_bounds is an array: [20, _l0 + 10, _l1 + 30]
-            #index_dict is a map: { _l0: 0, 
-            #                       _l1: 1,  
-            #                       _l2: 2}
             lower_bounds, upper_bounds, index_dict = GetKeyInfo(ir_item)
             # PrintCCode(lower_bounds)
             # PrintCCode(upper_bounds)
@@ -112,14 +83,24 @@ def LoopTiling(ir, tile_size = []):
             #     PrintCCode([item[0]])
             #     PrintCCode([item[1]])
 
+            for lower_bound_expr in lower_bounds:
+                #Type(upper_bound_expr) is an Exper or a nunmber
+                new_lower_bound = GetNewLowerBound(lower_bound_expr, tile_size)
+                # PrintCCode([new_lower_bound])
+                new_ir.append(new_lower_bound)
+
             for upper_bound_expr in upper_bounds:
                 #Type(upper_bound_expr) is an Exper or a nunmber
                 new_upper_bound = GetNewUpperBound(upper_bound_expr, index_dict, tile_size)
-                PrintCCode([new_upper_bound])
+                # PrintCCode([new_upper_bound])
+                new_ir.append(new_upper_bound)
+                
+    return new_ir
+            
 	
 if __name__ == "__main__":
     loop0_ir = Loop0()  # Loop0 is just an example
     # PrintCCode(loop0_ir)
 
     loop0_ir_after_tiling = LoopTiling(loop0_ir, tile_size = [3,4,5])
-    # PrintCCode(loop0_ir_after_tiling)
+    PrintCCode(loop0_ir_after_tiling)
