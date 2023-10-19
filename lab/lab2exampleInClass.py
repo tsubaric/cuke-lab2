@@ -18,13 +18,11 @@
 #         } 
 #     } 
 # } 
-
 # #Original lower bounds of _l0 loop: 0
 # #Original upper bounds of _l0 loop: 20
 
 # def RoundLowerBound(original_lower_bound, tile_size):
 #     return ceil(original_lower_bound/tile_size) * tile_size; 
-
 
 # tiled loop 
 # for (       int _l0 = RoundLowerBound(0 - (tile_size[0]-1), tile_size[0])
