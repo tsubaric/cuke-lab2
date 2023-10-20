@@ -10,8 +10,9 @@ def PrintCCode(ir):
 	for d in ir:
 		# if d:
 			code += to_string(d)
-	print(code)
+	print(code,'\n')
 
+#===========================================================>
 def Loop0():
     ir = []
 
@@ -42,7 +43,12 @@ def Loop0():
     ir.extend([loopi])
 
     return ir
+#===========================================================>
 
+
+#===========================================================>
+#===========================================================>
+#===========================================================> GetKeyInfo
 def GetKeyInfo(loop_ir):
     def _GetKeyInfo(loop_ir, lower_bounds, upper_bounds, index_dict, level):
         if not type(loop_ir)==Loop:
@@ -59,46 +65,83 @@ def GetKeyInfo(loop_ir):
     _GetKeyInfo(loop_ir, lower_bounds, upper_bounds, index_dict, 0)
     return lower_bounds, upper_bounds, index_dict
 
+
+#===========================================================>
+#===========================================================>
+#===========================================================> SetKeyInfo
+def SetKeyInfo(loop_ir, low_bounds, up_bounds):
+    def _SetKeyInfo(loop_ir, low_bounds, up_bounds, level):
+        if not type(loop_ir)==Loop:
+            return
+        if type(loop_ir)==Loop:
+            loop_ir.start = low_bounds[level]
+            loop_ir.end = up_bounds[level]
+            _SetKeyInfo(loop_ir.body[0], low_bounds, up_bounds, level+1)
+    
+    _SetKeyInfo(loop_ir, low_bounds, up_bounds, 0)
+    return loop_ir
+
+
+#===========================================================>
+#===========================================================>
+#===========================================================> GetNewUpperBound
 def GetNewUpperBound(upper_bound_expr, index_dict, tile_size_list):
     if type(upper_bound_expr)==Expr: # upper_bound_expr.left + upper_bound_expr.right 
         iterator_index = upper_bound_expr.left
         return Expr(upper_bound_expr, tile_size_list[index_dict[iterator_index]], '+')
     else:
         return upper_bound_expr
-    
+
+
+#===========================================================>
+#===========================================================>
+#===========================================================> GetNewLowerBound
 def GetNewLowerBound(lower_bound_expr, tile_size,i):
     # New lower bound(i) = Original lower bound(i) - (tile_size(i) - 1)
     return Expr(lower_bound_expr, Expr(tile_size[i], 1, '-'), '-')
 
+
+#===========================================================>
+#===========================================================>
+#===========================================================> LoopTiling
 def LoopTiling(ir, tile_size = []):
     new_ir = []
     low_bounds = []
     up_bounds = []
-    bound_trim = " - " + str(tile_size) + " - 1"
-    # print(bound_trim)
+    #====================================> lower_bounds, upper_bounds change
     for ir_item in ir:
         if type(ir_item) == Loop:
             lower_bounds, upper_bounds, index_dict = GetKeyInfo(ir_item)
+            
             i = 0
             for lower_bound_expr in lower_bounds:
-                #Type(upper_bound_expr) is an Exper or a nunmber
                 new_lower_bound = GetNewLowerBound(lower_bound_expr, tile_size,i)
-                i = i + 1
                 low_bounds.append(new_lower_bound)
-            PrintCCode(low_bounds)
+                i = i + 1
 
             for upper_bound_expr in upper_bounds:
                 #Type(upper_bound_expr) is an Exper or a nunmber
                 new_upper_bound = GetNewUpperBound(upper_bound_expr, index_dict, tile_size)
                 up_bounds.append(new_upper_bound)
-            PrintCCode(up_bounds)
-                
-    return new_ir
+            
+            ir_item = SetKeyInfo(ir_item, low_bounds, up_bounds)
+    #====================================> Printing
+    print("===> New lower bounds")
+    PrintCCode(low_bounds)
+    
+    print("===> New upper bounds")
+    PrintCCode(up_bounds)
+    
+    print("===> Updated lower/upper bound of original loops")
+    PrintCCode(ir)  
+    #====================================>
+    # return new_ir
             
 	
 if __name__ == "__main__":
+    print("===> Original code")
     loop0_ir = Loop0()  # Loop0 is just an example
     PrintCCode(loop0_ir)
 
     loop0_ir_after_tiling = LoopTiling(loop0_ir, tile_size = [3,4,5])
-    PrintCCode(loop0_ir_after_tiling)
+    # PrintCCode(loop0_ir_after_tiling)
