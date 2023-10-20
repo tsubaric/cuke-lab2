@@ -67,15 +67,19 @@ def GetNewUpperBound(upper_bound_expr, index_dict, tile_size_list):
     else:
         return upper_bound_expr
     
-def GetNewLowerBound(lower_bound_expr, tile_size):
+def GetNewLowerBound(lower_bound_expr, tile_size, i):
     # New lower bound(i) = Original lower bound(i) - (tile_size(i) - 1)
-    return Expr(lower_bound_expr, Expr(tile_size, 1, '-'), '-')
+    return Expr(lower_bound_expr, Expr(tile_size[i], 1, '-'), '-')
 
 def LoopTiling(ir, tile_size = []):
     new_ir = []
+    low_bounds = []
+    up_bounds = []
+    bound_trim = " - " + str(tile_size) + " - 1"
     for ir_item in ir:
         if type(ir_item) == Loop:
             lower_bounds, upper_bounds, index_dict = GetKeyInfo(ir_item)
+            i = 0
             # PrintCCode(lower_bounds)
             # PrintCCode(upper_bounds)
 
@@ -83,17 +87,28 @@ def LoopTiling(ir, tile_size = []):
             #     PrintCCode([item[0]])
             #     PrintCCode([item[1]])
 
+            low_bounds.append("[")
             for lower_bound_expr in lower_bounds:
                 #Type(upper_bound_expr) is an Exper or a nunmber
-                new_lower_bound = GetNewLowerBound(lower_bound_expr, tile_size)
+                new_lower_bound = GetNewLowerBound(lower_bound_expr, tile_size, i)
                 # PrintCCode([new_lower_bound])
-                new_ir.append(new_lower_bound)
+                i = i + 1
+                low_bounds.append(new_lower_bound)
+                low_bounds.append(", ")
+            low_bounds.pop()
+            low_bounds.append("]")
+            PrintCCode(low_bounds)
 
+            up_bounds.append("[")
             for upper_bound_expr in upper_bounds:
                 #Type(upper_bound_expr) is an Exper or a nunmber
                 new_upper_bound = GetNewUpperBound(upper_bound_expr, index_dict, tile_size)
                 # PrintCCode([new_upper_bound])
-                new_ir.append(new_upper_bound)
+                up_bounds.append(new_upper_bound)
+                up_bounds.append(", ")
+            up_bounds.pop()
+            up_bounds.append("]")
+            PrintCCode(up_bounds)
                 
     return new_ir
             
