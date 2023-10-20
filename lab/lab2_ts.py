@@ -43,6 +43,19 @@ def Loop0():
 
     return ir
 
+def SetKeyInfo(loop_ir, low_bounds, up_bounds, tile_size):
+    def _SetKeyInfo(loop_ir, low_bounds, up_bounds, level, tile_size):
+        if not type(loop_ir)==Loop:
+            return
+        if type(loop_ir)==Loop:
+            loop_ir.start = low_bounds[level]
+            loop_ir.end = up_bounds[level]
+            loop_ir.step = tile_size[level]
+            _SetKeyInfo(loop_ir.body[0], low_bounds, up_bounds, level+1, tile_size)
+    
+    _SetKeyInfo(loop_ir, low_bounds, up_bounds, 0, tile_size)
+    return loop_ir
+
 def GetKeyInfo(loop_ir):
     def _GetKeyInfo(loop_ir, lower_bounds, upper_bounds, index_dict, level):
         if not type(loop_ir)==Loop:
@@ -60,62 +73,96 @@ def GetKeyInfo(loop_ir):
     return lower_bounds, upper_bounds, index_dict
 
 def GetNewUpperBound(upper_bound_expr, index_dict, tile_size_list):
-    if type(upper_bound_expr)==Expr: # upper_bound_expr.left + upper_bound_expr.right 
-        # upper_bound_expr.left  is k in the algorithm 
+    if type(upper_bound_expr)==Expr: 
         iterator_index = upper_bound_expr.left
         return Expr(upper_bound_expr, tile_size_list[index_dict[iterator_index]], '+')
     else:
         return upper_bound_expr
     
 def GetNewLowerBound(lower_bound_expr, tile_size, i):
-    # New lower bound(i) = Original lower bound(i) - (tile_size(i) - 1)
     return Expr(lower_bound_expr, Expr(tile_size[i], 1, '-'), '-')
+
+def FindBody(nested_loop):
+    if not type(nested_loop) == Loop:
+        return nested_loop
+    if type(nested_loop.body[0]) == Loop:
+        return FindBody(nested_loop.body[0])
+    else:
+        return nested_loop.body
+    
+def point_loops(org_low, org_up, index_dict, tile_size, num_of_loops,bodyyy):
+    point_ir = []
+    loops = [0 for _ in range(num_of_loops)]
+    tile_loop_iter = list(index_dict.keys())
+    
+    for kk in range(0,num_of_loops):
+        loops[kk] = Loop(Max(tile_loop_iter[kk],org_low[kk]), Min(Expr(tile_loop_iter[kk],tile_size[kk],'+'),org_up[kk]),1,[])
+      
+    for jj in range(num_of_loops-1):
+        loops[jj].body.append(loops[jj+1])  
+    
+    loops[-1].body.extend(bodyyy)
+    point_ir.extend([loops[0]])
+    
+    return point_ir
+
+def merge(tiled_loops, point_loops):
+    if not type(tiled_loops) == Loop:
+        tiled_loops = point_loops
+    if type(tiled_loops.body[0]) == Loop:
+        return merge(tiled_loops.body[0], point_loops)
+    else:
+        tiled_loops.body = point_loops
+
 
 def LoopTiling(ir, tile_size = []):
     new_ir = []
     low_bounds = []
     up_bounds = []
-    bound_trim = " - " + str(tile_size) + " - 1"
+    body = ""
+
     for ir_item in ir:
         if type(ir_item) == Loop:
-            lower_bounds, upper_bounds, index_dict = GetKeyInfo(ir_item)
+            org_lower, org_upper, index_dict = GetKeyInfo(ir_item)
             i = 0
-            # PrintCCode(lower_bounds)
-            # PrintCCode(upper_bounds)
-
-            # for item in index_dict.items():
-            #     PrintCCode([item[0]])
-            #     PrintCCode([item[1]])
-
-            low_bounds.append("[")
-            for lower_bound_expr in lower_bounds:
-                #Type(upper_bound_expr) is an Exper or a nunmber
+            for lower_bound_expr in org_lower:
                 new_lower_bound = GetNewLowerBound(lower_bound_expr, tile_size, i)
-                # PrintCCode([new_lower_bound])
-                i = i + 1
                 low_bounds.append(new_lower_bound)
-                low_bounds.append(", ")
-            low_bounds.pop()
-            low_bounds.append("]")
-            PrintCCode(low_bounds)
+                i = i + 1
 
-            up_bounds.append("[")
-            for upper_bound_expr in upper_bounds:
-                #Type(upper_bound_expr) is an Exper or a nunmber
+            for upper_bound_expr in org_upper:
                 new_upper_bound = GetNewUpperBound(upper_bound_expr, index_dict, tile_size)
-                # PrintCCode([new_upper_bound])
                 up_bounds.append(new_upper_bound)
-                up_bounds.append(", ")
-            up_bounds.pop()
-            up_bounds.append("]")
-            PrintCCode(up_bounds)
+
+            ir_item = SetKeyInfo(ir_item, low_bounds, up_bounds, tile_size)
+            body = FindBody(ir_item)
+
+    point_loops_ir = point_loops(org_lower, org_upper, index_dict, tile_size, len(low_bounds), body)
+
+    for ir_item in ir:
+         if type(ir_item) == Loop:
+              merge(ir_item, point_loops_ir)
+
+    print("============================> New Lower Bounds")
+    PrintCCode(low_bounds)
+    
+    print("============================> New Upper Bounds")
+    PrintCCode(up_bounds)
+    
+    print("============================> New Points Loops Generated")
+    PrintCCode(point_loops_ir)  
+    
+    print("============================> Inner Most Statements")
+    PrintCCode(body)
+    
+    print("============================> Merged Final Loops")
+    PrintCCode(ir)
                 
     return new_ir
             
-	
 if __name__ == "__main__":
     loop0_ir = Loop0()  # Loop0 is just an example
     # PrintCCode(loop0_ir)
 
     loop0_ir_after_tiling = LoopTiling(loop0_ir, tile_size = [3,4,5])
-    PrintCCode(loop0_ir_after_tiling)
+    # PrintCCode(loop0_ir_after_tiling)
